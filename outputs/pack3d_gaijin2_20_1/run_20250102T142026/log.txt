@@ -1,0 +1,12 @@
+Logging to outputs\pack3d_gaijin2_20_1\run_20250102T142026
+----------------------------------
+| actor_loss         | -0.0535   |
+| alpha_loss         | -5.75     |
+| avg_rewards        | -3.69e+04 |
+| entropy            | 1.37      |
+| epoch              | 0         |
+| explained_variance | 7.75e-07  |
+| gap_ratio          | 0.724     |
+| value_loss         | 3.2e+08   |
+| var_gap_ratio      | 0.0138    |
+----------------------------------

@@ -135,7 +135,7 @@ class StatePack3D():
         scale_expand = move_to(scale_expand, device)
         resized_data = batch * scale_expand
         resized_data[resized_data < 1] = 1.0
-        resized_data[resized_data > 9] = 9.0
+        resized_data[resized_data > 10] = 10.0
         self.update_env(resized_data,batch_size,block_size,device)
         
     def update_select(self, selected):
@@ -238,11 +238,11 @@ class StatePack3D():
                 rotate_mask[i], box_h_rotate)
             
         inbox_length[inbox_length < 1] = 1.0
-        inbox_length[inbox_length > 9] = 9.0
+        inbox_length[inbox_length > 10] = 10.0
         inbox_width[inbox_width < 1] = 1.0
-        inbox_width[inbox_width > 9] = 9.0
+        inbox_width[inbox_width > 10] = 10.0
         inbox_height[inbox_height < 1] = 1.0
-        inbox_height[inbox_height > 9] = 9.0
+        inbox_height[inbox_height > 10] = 10.0
         
         
         self.packed_rotate[torch.arange(0, rotate.size(
@@ -406,7 +406,7 @@ class StatePack3D():
         resized_data = self.raw_data[batch_index] * scale_expand
         resized_data = move_to(torch.tensor(resized_data),self.device)
         resized_data[resized_data < 1] = 1.0
-        resized_data[resized_data > 9] = 9.0
+        resized_data[resized_data > 10] = 10.0
 
         self.packed_state[batch_index, :, 1:4] = resized_data
         self.container[batch_index] = 0
