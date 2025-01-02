@@ -2,7 +2,7 @@
 # coding: utf-8
 
 from torch.utils.data import Dataset
-from problems.pack3d.load_br import get_br_ds
+from problems.pack3d.load_br import get_br_ds, read_training_data
 import torch
 import os
 from random import randint
@@ -26,12 +26,16 @@ class Pack3DInit(Dataset):
         if distribution == 'normal':
             self.data = [generate_normal(shape=(block_size, 3), mu=size_p1, sigma=size_p2, a=0.02, b=2.0) for i in range(batch_size)]
         elif distribution == 'br':
-            training_ds, _ = get_br_ds('.')
-            self.data = torch.from_numpy(training_ds)
+            # training_ds, _ = get_br_ds('.')
+            # self.data = torch.from_numpy(training_ds)
+            self.data = read_training_data('./processed_data.csv')
         else:
             assert distribution == 'uniform'
             self.data = [torch.randint(2,8,(block_size,3)).float() for i in range(batch_size)]
         
+        # print(f"data: {self.data[0]}")
+        # print(f"data size: {len(self.data)}")
+        # raise NotImplementedError("Please implement the data generation process for pack3d problem")
         self.size = len(self.data)
     
     def __len__(self):

@@ -142,6 +142,7 @@ class Normalization(nn.Module):
             param.data.uniform_(-stdv, stdv)
 
     def forward(self, input):
+        # print(input)
 
         if isinstance(self.normalizer, nn.BatchNorm1d):
 
@@ -196,9 +197,16 @@ class EncoderSeq(nn.Module):
             for _ in range(encoder_nb_layers))
 
     def forward(self, x):
+        x = x.float()
+        # print(x)
+        # for name, param in self.init_embed.named_parameters():
+        #     print(f"{name}: {param.mean()}, {param.std()}")
+        #     assert not torch.isnan(param).any(), "Weights contain NaN"
+
         # x size = B x M
         # block_size = x.size(1)
         h = self.init_embed(x)  # B x M x H
+        # print(h)
         # h_cache_next = []
         for l, layer in enumerate(self.layers):
             # cache_size = layer.attn.attn.get_cache_size()
@@ -211,6 +219,7 @@ class EncoderSeq(nn.Module):
             # h_cache_next.append(h_cache_next_l)
 
             h = layer(h, h)  # B x M x H
+            # print(h)
 
         return h
 

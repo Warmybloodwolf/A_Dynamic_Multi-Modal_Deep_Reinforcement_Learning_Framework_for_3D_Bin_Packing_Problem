@@ -45,7 +45,7 @@ PARAMS_CONFIG = {
         },
         '--nsteps': {
             'type': int,
-            'default': 10,
+            'default': 5,
             'help': 'GAE rolling out steps',
             'dest': 'nsteps'
         },
@@ -201,7 +201,7 @@ PARAMS_CONFIG = {
         },
         '--data-distribution': {
             'type': str,
-            'default': 'uniform',
+            'default': 'br',       # normal or uniform or br
             'help': 'Data distribution to use during training',
             'dest': 'distribution'
         },
@@ -210,7 +210,7 @@ PARAMS_CONFIG = {
     'optim_params': {
         '--actor-lr': {
             'type': float,
-            'default': 4e-5,
+            'default': 1e-5,
             'help': 'actor learning rate',
             'dest': 'actor_lr'
         },
@@ -230,7 +230,7 @@ PARAMS_CONFIG = {
         },
         '--grad-clip': {
             'type': float,
-            'default': 5,
+            'default': 5000,
             'help': 'clip gradient of each module parameters by a given '
                     'value',
             'dest': 'grad_clip'
@@ -246,7 +246,7 @@ PARAMS_CONFIG = {
         },
         '--niter': {
             'type': int,
-            'default': 100000,
+            'default': 1000,
             'help': 'number of iterations to train',
             'dest': 'nb_iter'
         },
@@ -264,7 +264,7 @@ PARAMS_CONFIG = {
         },
         '--no-tensorboard': {
             'action': 'store_true',
-            'default': False,
+            'default': True,
             'help': 'disable tensorboard.',
             'dest': 'no_tensorboard'
         },

@@ -32,8 +32,22 @@ def torch_load_cpu(load_path):
 
 def move_to(var, device):
     if isinstance(var, dict):
+        # 如果是字典，递归调用 move_to
         return {k: move_to(v, device) for k, v in var.items()}
-    return var.to(device)
+    elif isinstance(var, list):
+        # 如果是列表，递归调用 move_to
+        return [move_to(v, device) for v in var]
+    elif isinstance(var, tuple):
+        # 如果是元组，递归调用 move_to
+        return tuple(move_to(v, device) for v in var)
+    elif isinstance(var, np.ndarray):
+        # 如果是 numpy.ndarray，先转换为 PyTorch Tensor
+        var = torch.from_numpy(var)
+    if isinstance(var, torch.Tensor):
+        # 如果是 Tensor，移动到指定设备
+        return var.to(device)
+    # 返回原始数据（无需处理的类型）
+    return var
 
 
 def _load_model_file(load_path, model):

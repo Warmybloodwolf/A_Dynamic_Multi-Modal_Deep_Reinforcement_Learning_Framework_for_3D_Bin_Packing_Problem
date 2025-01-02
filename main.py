@@ -146,7 +146,7 @@ def launch(env_params,
     for epoch in tqdm(range(iter_init, trainer_params['nb_iter'])):
         # print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], run_name))
         # t_sta = time.time() # in seconds
-        state, values, returns, losses, entropy, grad_norms, log_alpha = train_epoch(
+        total_gap, gap_ratio, rewards, values, returns, losses, entropy, grad_norms, alpha_tlogs  = train_epoch(
             modules,
             optimizer,
             scheduler,
@@ -181,7 +181,7 @@ def launch(env_params,
             #     print("Finished evaluation with gap ratio {}, took {} s".format(avg_gap_ratio, time.strftime('%H:%M:%S', time.gmtime(elapsed))))  
 
         # for monitor
-        epoch_logger(epoch, state, values, returns, losses, entropy, grad_norms, log_alpha, optimizer,
+        epoch_logger(epoch, total_gap, gap_ratio, rewards, values, returns, losses, entropy, grad_norms,alpha_tlogs, optimizer,
                      tb_writer, trainer_params['log_interval'], run_name)
 
         
@@ -192,7 +192,7 @@ def launch(env_params,
         trainer_params['full_eval_mode'] = True
         t_sta = time.time() # in seconds
 
-        state, values, returns, losses, entropy, _, _ = train_epoch(
+        total_gap, gap_ratio, rewards, values, returns, losses, entropy, _, _ = train_epoch(
                 modules, 
                 optimizer, 
                 scheduler, 
@@ -201,7 +201,6 @@ def launch(env_params,
                 target_entropy,
                 **model_params, **trainer_params, **optim_params, **rl_params)
 
-        gap_ratio = state.get_gap_ratio()
         avg_gap_ratio = gap_ratio.mean().item()
 
         elapsed = time.time() - t_sta

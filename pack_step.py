@@ -67,6 +67,8 @@ def calc_one_position_lb_greedy_3d(block, block_index, container_size, reward_ty
         if x + block_x > container_size[0] or \
                 y + block_y > container_size[1]: continue
         z = np.max(heightmap[x:x + block_x, y:y + block_y])
+        # 检查高度是否满足要求
+        if z + block_z > container_size[2]: continue
         ems_list.append([x, y, z])
 
     # firt consider the most bottom, sort by z coordinate, then y last x
@@ -79,7 +81,7 @@ def calc_one_position_lb_greedy_3d(block, block_index, container_size, reward_ty
     if len(ems_list) == 0:
         valid_size -= block_x * block_y * block_z
         stable[block_index] = False
-        return container, positions, stable, heightmap, valid_size, empty_size
+        return container, positions, stable, heightmap, valid_size, empty_size, True   # 箱子已满
 
     # varients to store results of searching ems corners
     ems_num = len(ems_list)
@@ -144,7 +146,7 @@ def calc_one_position_lb_greedy_3d(block, block_index, container_size, reward_ty
     if np.sum(is_settle_ems) == 0:
         valid_size -= block_x * block_y * block_z
         stable[block_index] = False
-        return container, positions, stable, heightmap, valid_size, empty_size
+        return container, positions, stable, heightmap, valid_size, empty_size, True   # 箱子已满
 
     # get the best ems
     ratio_ems = [c + p + s for c, p, s in zip(compactness_ems, pyramidality_ems, stability_ems)]
@@ -162,7 +164,8 @@ def calc_one_position_lb_greedy_3d(block, block_index, container_size, reward_ty
     heightmap = heightmap_ems[best_ems_index]
     empty_size = empty_ems[best_ems_index]
 
-    return container, positions, stable, heightmap, valid_size, empty_size
+    return container, positions, stable, heightmap, valid_size, empty_size, False   # 箱子未满
+
 def is_stable(block, position, container):
     '''
     check for 3D packing
@@ -240,8 +243,12 @@ def pack_step(modules, state,  problem_params):
     hm=torch.tensor(hm).float()
     hm=move_to(hm,state.device)
     actor_modules = modules['actor']
+    # print('packed_state_shape',state.packed_state.shape)
+    # print('packed_state',state.packed_state[0])
 
     actor_encoder_out = actor_modules['encoder'](state.packed_state)
+    # print('actor_encoder_out_shape',actor_encoder_out.shape)
+    # print('actor_encoder_out',actor_encoder_out[0])
     if state.index == 0:
         actor_encoder_out_select = torch.zeros(state.batch_size, 1, 128)
         actor_encoder_out_select = move_to(actor_encoder_out_select, state.device)
@@ -254,8 +261,12 @@ def pack_step(modules, state,  problem_params):
     q_select=torch.mean(q_select,dim=1).unsqueeze(1)
     # if not state.online:
     #     # (batch, block, 1)
+    # print('q_select_shape',q_select.shape)
+    # print('q_select',q_select[0])  
     s_out = actor_modules['s_decoder'](q_select, actor_encoder_out)
     select_mask=state.packed_state[:,:,0].bool()
+    # print('s_out_shape',s_out.shape)
+    # print('s_out',s_out[0])
 
     # select_mask = state.get_mask()
 #         print(state.boxes, state.packed_state)
@@ -282,7 +293,7 @@ def pack_step(modules, state,  problem_params):
     # rotation
     state.update_rotate(rotation)
     blocks=state.action.get_shape()
-
+    # batch,3
 
     for  i,j in enumerate(blocks):
         block=j.int().tolist()
@@ -298,7 +309,7 @@ def pack_step(modules, state,  problem_params):
         valid_size = state.valid_size[i]
         empty_size =state.empty_size[i]
         heightmap = state.heightmap[i]
-        state.container[i], state.positions [i],state.stable[i], state.heightmap[i], state.valid_size[i],state.empty_size[i]= calc_one_position_lb_greedy_3d(block,
+        state.container[i], state.positions [i],state.stable[i], state.heightmap[i], state.valid_size[i],state.empty_size[i], full = calc_one_position_lb_greedy_3d(block,
                                                                                                          block_index,
                                                                                                          container_size,
                                                                                                          reward_type,
@@ -308,59 +319,36 @@ def pack_step(modules, state,  problem_params):
                                                                                                          heightmap,
                                                                                                          valid_size,
                                                                                                          empty_size)
-
-    # if problem_params['problem_type'] == 'pack2d':
-    #     p_position = state.action.get_shape().unsqueeze(1)
-    #
-    #     if not problem_params['no_query']:
-    #
-    #         p_out = actor_modules['p_decoder'](p_position, actor_encoder_out).squeeze(1)
-    #
-    #     else:
-    #
-    #         p_out = actor_modules['p_decoder'](q_rotation, actor_encoder_out).squeeze(1)
-    #
-    #     x_log_p, box_xs = _drop_step(p_out.squeeze(-1), state.get_boundx())
-    #
-    #     value, h_caches[1] = modules['critic'](state.boxes, state.packed_state, h_caches[1])
-    #     value = value.squeeze(-1)
-    #     # update location and finish one step packing
-    #     state.update_pack(box_xs)
-    #
-    #     return s_log_p, r_log_p, x_log_p, value, h_caches
-    # else:
-    #
-    #     p_position = state.action.get_shape().unsqueeze(1)
-    #     q_position = state.action.get_shape().unsqueeze(1)
-    #
-    #
-    #     if not problem_params['no_query']:
-    #
-    #         p_out = actor_modules['p_decoder'](p_position, actor_encoder_out).squeeze(1)
-    #         q_out = actor_modules['q_decoder'](q_position, actor_encoder_out).squeeze(1)
-    #     else:
-    #
-    #         p_out = actor_modules['p_decoder'](q_rotation, actor_encoder_out).squeeze(1)
-    #         q_out = actor_modules['q_decoder'](q_rotation, actor_encoder_out).squeeze(1)
-
-        # x_log_p, box_xs = _drop_step(p_out.squeeze(-1), state.get_boundx())
-        # y_log_p, box_ys = _drop_step(q_out.squeeze(-1), state.get_boundy())
+        if full:
+            # 表明第i个instance的当前container已满，需要重新选择box分配或分配一个新container，这里选择直接分配新箱子
+            # state.action.sp[i, 0] = 0         有人撒了弥天大谎
+            state.new_container(i)
 
     value = modules['critic'](actor_encoderheightmap_out, actor_encoder_out)
     value = value.squeeze(-1).squeeze(-1)
 
-    state.update_pack()
+    pack_done = state.update_pack()
+    # print('pack_done',pack_done)
 
-    return s_log_p, r_log_p, value
+    return s_log_p, r_log_p, value, pack_done
 
 
 
 
 def _select_step(s_logits, mask):
+    # print('s_logits_shape',s_logits.shape)
+    # print('s_logits',s_logits[0])
+    # print('mask_shape',mask.shape)
+    # print('mask',mask[0])
 
     s_logits = s_logits.masked_fill(mask, -np.inf)
+    # print('s_logits_masked',s_logits[0])
 
     s_log_p = F.log_softmax(s_logits, dim=-1)
+    # print('s_log_p_shape',s_log_p.shape)
+    # print('s_log_p',s_log_p[0])
+
+    # print('s_log_p_exp',s_log_p.exp()[0])
 
     # (batch)
     selected = _select(s_log_p.exp()).unsqueeze(-1)

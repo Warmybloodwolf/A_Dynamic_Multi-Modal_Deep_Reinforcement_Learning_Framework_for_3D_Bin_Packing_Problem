@@ -5,8 +5,10 @@
 
 
 import os
+import pandas as pd
 import numpy as np
 from itertools import cycle
+from torch.utils.data import DataLoader, Dataset
 
 
 # In[260]:
@@ -101,7 +103,71 @@ def get_br_ds(path, graph_size=200, batch_size=32):
     return training_ds, test_ds
 
 
+def read_training_data(csv_file_path):
+    """
+    读取 CSV 文件并将数据组织为指定的格式。
+
+    :param csv_file_path: CSV 文件路径
+    :return: 数据集，格式为 LIST[(box_num, 3)]
+    """
+    # 读取 CSV 文件
+    data = pd.read_csv(csv_file_path
+                    #    , dtype={'value': 'float32'}
+                       )
+
+    # 按 instance_id 分组
+    grouped_data = data.groupby('instance_id')
+
+    dataset = []
+    
+    # 遍历每个分组并提取 (length, width, height)
+    for _, group in grouped_data:
+        # 提取 length, width, height 并转换为 (box_num, 3)
+        box_data = group[['length', 'width', 'height']].to_numpy()
+        # box_data *= 0.1
+        # box_data = np.maximum(box_data, 1)
+        dataset.append(box_data)
+
+    return dataset
 
 
+class BoxDataset(Dataset):
+    def __init__(self, data):
+        """
+        初始化数据集。
+
+        :param data: 数据集，格式为 LIST[(box_num, 3)]
+        """
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+    
+
+def custom_collate_fn(batch):
+    """
+    自定义 collate_fn，确保每个 batch 的实例具有相同的 box_num。
+
+    :param batch: 数据列表
+    :return: 按 box_num 分组的 batch 数据
+    """
+    # 按 box_num 分组
+    grouped_batches = {}
+    for instance in batch:
+        box_num = instance.shape[0]
+        if box_num not in grouped_batches:
+            grouped_batches[box_num] = []
+        grouped_batches[box_num].append(instance)
+
+    final_batches = []
+    for box_num, instances in grouped_batches.items():
+        # 如果超过128，按最大 batch_size=128 划分
+        for i in range(0, len(instances), 128):
+            final_batches.append(np.stack(instances[i:i + 128]))
+
+    return final_batches
 
 
