@@ -20,6 +20,8 @@ from utils import (
 from problems.pack2d.render import render
 from pack_step import pack_step
 
+from problems.pack3d.load_br import BoxDataset, custom_collate_fn
+
 
 def train_epoch(
     modules, 
@@ -38,49 +40,81 @@ def train_epoch(
 
     dataupdate = problem.make_dataset(block_size=block_size, batch_size=batch_size, online=problem_params['on_line'], **problem_params)
 
-    update_dataloader = DataLoader(dataupdate, batch_size=batch_size)
+    # print()
+    # print("Data update:", len(dataupdate))
 
-    # only encoder requires cache 
-    # h_cache_a = [
-    #     torch.zeros(
-    #         batch_size,
-    #         layer.attn.attn.get_cache_size(),
-    #         hidden_size).to(device)
-    #     for layer in modules['actor']['encoder'].module.layers]
-    #
-    # h_cache_c = [
-    #     torch.zeros(
-    #         batch_size,
-    #         layer.attn.attn.get_cache_size(),
-    #         hidden_size).to(device)
-    #     for layer in modules['critic'].module.att_encoder.layers]
+    # 创建 Dataset 对象
+    box_dataset = BoxDataset(dataupdate)
 
-    # h_caches = [h_cache_a, h_cache_c]
+    # 创建 DataLoader
+    data_loader = DataLoader(box_dataset, batch_size=1280, collate_fn=custom_collate_fn)
 
-    updatedata_iterator = iter(update_dataloader)
-    # instance_size = len(updatedata_iterator)
-    batch=next(updatedata_iterator)
-    batch=move_to(batch,device)
-    state = problem.make_state(
-        batch_size,block_size, device)
-    state.update_env(batch,batch_size,block_size,device)
+    # update_dataloader = DataLoader(dataupdate, batch_size=batch_size)
 
-    state, values, returns, losses, entropy, grad_norms = train_instance(
-        modules, 
-        optimizer, 
-        scheduler, 
-        # h_caches,
-        block_size,
-        state, 
-        # updatedata_iterator,
-        target_entropy,
-        problem_params, 
-        **kargs)
+    total_gap = None
+    gap_ratio = None
+    rewards = None
+
+    # updatedata_iterator = iter(update_dataloader)
+
+    # batch=next(updatedata_iterator)
+    # batch=move_to(batch,device)
+    # state = problem.make_state(
+    #     batch_size,block_size, device)
+    # state.update_env(batch,batch_size,block_size,device)
+
+    for batch in data_loader:
+        # print("=================================")
+        # print("New batch", batch[0].shape)
+        for sub_batch in batch:
+            # print(sub_batch.shape)
+            sub_batch = move_to(sub_batch, device)
+            
+            # (实例数, box_num, 3)
+            # 更新环境状态
+            state = problem.make_state(
+                sub_batch.shape[0],sub_batch.shape[1], device)
+            state.init_env(sub_batch, sub_batch.shape[0], sub_batch.shape[1], device)
+
+            if state.batch_size <= 1:
+                continue
+
+            # print()
+            # print("Current state:", state.batch_size, state.blocks_num)
+            
+            # 执行单个 batch 的训练
+            state, values, returns, losses, entropy, grad_norms = train_instance(
+                modules, 
+                optimizer, 
+                scheduler, 
+                sub_batch.shape[1],
+                state, 
+                target_entropy,
+                problem_params, 
+                **kargs
+            )
+
+            total_gap = state.get_gap_size() if total_gap is None else torch.cat((total_gap, state.get_gap_size()), dim=0)
+            gap_ratio = state.get_gap_ratio() if gap_ratio is None else torch.cat((gap_ratio, state.get_gap_ratio()), dim=0)
+            rewards = state.get_rewards() if rewards is None else torch.cat((rewards, state.get_rewards()), dim=0)
+            
+    # state, values, returns, losses, entropy, grad_norms = train_instance(
+    #     modules, 
+    #     optimizer, 
+    #     scheduler, 
+
+    #     block_size,
+    #     state, 
+
+    #     target_entropy,
+    #     problem_params, 
+    #     **kargs)
 
     # For TensorboardX logs
     alpha_tlogs = modules['critic'].module.log_alpha.clone()
 
-    return state, values, returns, losses, entropy, grad_norms, alpha_tlogs 
+
+    return total_gap, gap_ratio, rewards, values, returns, losses, entropy, grad_norms, alpha_tlogs 
 
 
 
@@ -104,7 +138,7 @@ def train_instance(
 
     # if box number is not inter times of nsteps, then we drop last several data
     # update_mb_number = int(len(updatedata_iterator) // kargs['nsteps'])
-    update_mb_number=int(block_size//kargs["nsteps"])
+    update_mb_number=math.ceil(block_size/kargs["nsteps"])
     # pack the last block
     # if not state.online:
     for mb_id in tqdm(range(update_mb_number), disable=True):
@@ -184,6 +218,11 @@ def train_minibatch(modules,
 
     returns, advs, values, log_likelihoods, entropys = get_mb_data(
             modules,  state, device, problem_params, **kargs)
+    
+    # print(f"Returns: {returns.mean()}") # NAN
+    # print(f"Values: {values.mean()}")
+    # print(f"Log likelihoods: {log_likelihoods.mean()}")
+    # print(f"Entropys: {entropys.mean()}")
 
     alpha_loss = -1 * torch.mv((-1*entropys + target_entropy).detach(), modules['critic'].module.log_alpha).mean()
 
@@ -197,15 +236,22 @@ def train_minibatch(modules,
 
     # do not backward critic in actor
     advantages = advs.detach()
+    # print(f"Advantages: {advantages.mean()}") 
 
     # Calculate loss (gradient ascent)  loss=A*log
     actor_loss = -1 * (advantages * log_likelihoods).mean()
     
+    # print(f"Actor loss: {actor_loss.item()}")   # NAN
+    # print(f"Value loss: {value_loss.item()}")   # NAN
+    # print(f"Alpha loss: {alpha_loss.item()}")
     loss = actor_loss + value_loss + alpha_loss
 
     if not full_eval_mode:
         # Perform backward pass and optimization step
         optimizer.zero_grad()
+        # print(f"Loss: {loss.item()}")
+        assert not torch.isnan(loss), "Loss is NaN"
+
         loss.backward()
         
         # Clip gradient norms and get (clipped) gradient norms for logging
@@ -234,7 +280,8 @@ def get_mb_data(modules, state, device, problem_params, gamma, nsteps, lam, soft
 
     mb_rewards, mb_values, mb_log_likelihoods, mb_entropy = [],[],[],[]
 
-    for _ in range(nsteps):
+    actual_nsteps = nsteps
+    for i in range(nsteps):
         # pack last block
         # if updatedata_iterator is None:
         #     if problem_params['problem_type'] == 'pack2d':
@@ -255,13 +302,17 @@ def get_mb_data(modules, state, device, problem_params, gamma, nsteps, lam, soft
         # # print('batch 0: ',batch[0])
 
         
-        ll, entropy, value, reward = _run_batch(modules, state,  problem_params, soft_temp)
+        ll, entropy, value, reward, done = _run_batch(modules, state,  problem_params, soft_temp)
         mb_values.append(value)
         mb_log_likelihoods.append(ll)
         mb_rewards.append(reward)
         mb_entropy.append(entropy)
+        if done:
+            actual_nsteps = i+1
+            break
 
     # batch of steps to batch of roll-outs (nstep, batch)
+    # print(f'mb_rewards: {mb_rewards}')
     mb_rewards = torch.stack(mb_rewards)
     mb_values = torch.stack(mb_values)
     mb_log_likelihoods = torch.stack(mb_log_likelihoods)
@@ -271,7 +322,6 @@ def get_mb_data(modules, state, device, problem_params, gamma, nsteps, lam, soft
         last_values=torch.zeros(state.batch_size,dtype=torch.float)
         last_values=move_to(last_values,state.device)
     else:
-
         hm = np.zeros((state.batch_size, 2, state.heightmap[0].shape[0], state.heightmap[0].shape[1])).astype(int)
         for i in range(state.batch_size):
             hm_diff_x = np.insert(state.heightmap[i], 0, state.heightmap[i][0, :], axis=0)
@@ -302,17 +352,28 @@ def get_mb_data(modules, state, device, problem_params, gamma, nsteps, lam, soft
 
     lastgaelam = 0
 
-    for t in reversed(range(nsteps)):
-        if t == nsteps - 1:
+    for t in reversed(range(actual_nsteps)):
+        if t == actual_nsteps - 1:
             nextvalues = last_values
         else:
             nextvalues = mb_values[t+1]
 
+        # print(f'mb_rewards[t]: {mb_rewards[t].mean()}')   # NAN
+        # print(f'nextvalues: {nextvalues.mean()}')
+
         delta = mb_rewards[t] + gamma * nextvalues - mb_values[t]
+        # print(f"Delta: {delta.mean()}") # NAN
+        # print(f"gamma: {gamma}")
+        # print(f"lam: {lam}")
+        # print(f"lastgaelam: {lastgaelam}")
         mb_advs[t] = lastgaelam = delta + gamma * lam * lastgaelam
 
+    # print(f"MB advs: {mb_advs.mean()}")     # NAN
+    # print(f"MB values: {mb_values.mean()}")
     # use return to supervise critic
     mb_returns = mb_advs + mb_values
+
+    # print(f"MB returns: {mb_returns.mean()}")   # NAN
 
     # (batch * nstep, )
     returns, advs, values, log_likelihoods, entropys = map(sf01, \
@@ -328,6 +389,7 @@ def _run_batch(modules, state,  problem_params, soft_temp):
     # state.update_env(batch)
 
     last_gap = state.get_gap_size()
+    # print(f"Last gap: {last_gap.mean()}")
 
     if problem_params['problem_type'] == 'pack2d':
 
@@ -343,33 +405,28 @@ def _run_batch(modules, state,  problem_params, soft_temp):
 
     elif problem_params['problem_type'] == 'pack3d':
 
-        s_log_p, r_log_p, value= pack_step(modules, state, problem_params)
+        s_log_p, r_log_p, value, done = pack_step(modules, state, problem_params)
 
         actions = state.action()
-        
-        # actions['x'] = ((actions['x'] + 1.0) * (x_log_p.size(1)/2)).round().long()
-        # actions['y'] = ((actions['y'] + 1.0) * (y_log_p.size(1)/2)).round().long()
 
         ll = _calc_log_likelihood_3d(actions, s_log_p, r_log_p)
         entropys = _calc_entropy_3d(s_log_p, r_log_p)
 
-    # # ll (batch, 1), entropy (batch, 3)
-    # ll = _calc_log_likelihood(actions, s_log_p, r_log_p, x_log_p, state.online)
-    # entropys = _calc_entropy(s_log_p, r_log_p, x_log_p, state.online)
-
     # (batch)
     new_gap = state.get_gap_size()
+    # print(f"New gap: {new_gap.mean()}")
     reward = (last_gap - new_gap)
 
     alpha = torch.exp(modules['critic'].module.log_alpha)
-
-
-    # print('entropy: ', entropys.size(), "alpha: ", alpha.size())
+    # print(f"Alpha: {alpha.mean()}")
+    # print(f"Entropys: {entropys.mean()}")
     reward +=  torch.mv(entropys, alpha).detach()
 
     state.put_reward(reward)
 
-    return ll, entropys, value, reward
+    # print(f"Reward: {reward.mean()}")
+
+    return ll, entropys, value, reward, done
 
 
 def _calc_entropy(s_log, r_log, x_log, online):
@@ -522,11 +579,11 @@ def full_eval(
 
 
 
-def epoch_logger(epoch, state, values, returns, losses, entropy, grad_norms, log_alpha, optimizer, tb_writer, log_interval, run_name):
+def epoch_logger(epoch, total_gap, gap_ratio, rewards, values, returns, losses, entropy, grad_norms, log_alpha, optimizer, tb_writer, log_interval, run_name):
 
-    total_gap = state.get_gap_size()
-    gap_ratio = state.get_gap_ratio()
-    rewards = state.get_rewards()
+    total_gap = total_gap
+    gap_ratio = gap_ratio
+    rewards = rewards
     
     avg_gap = total_gap.mean().item()
     avg_gap_ratio = gap_ratio.mean().item()
@@ -541,7 +598,7 @@ def epoch_logger(epoch, state, values, returns, losses, entropy, grad_norms, log
 
     # Log values to screen
     if epoch % log_interval == 0:
-        print("state.packed_state:{}".format(state.packed_state))
+        # print("state.packed_state:{}".format(state.packed_state))
         print('\nepoch: {}, run {}, avg_rewards: {}, gap_ratio: {}, var_gap_ratio: {}, ev: {}, loss: {}'.\
               format(epoch, run_name, avg_rewards, avg_gap_ratio, var_gap_ratio, ev, losses[3]))
         print('min gap ratio: {}, max gap ratio: {}'.format(min_gap, max_gap))
