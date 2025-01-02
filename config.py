@@ -230,7 +230,7 @@ PARAMS_CONFIG = {
         },
         '--grad-clip': {
             'type': float,
-            'default': 50,
+            'default': 5000,
             'help': 'clip gradient of each module parameters by a given '
                     'value',
             'dest': 'grad_clip'
