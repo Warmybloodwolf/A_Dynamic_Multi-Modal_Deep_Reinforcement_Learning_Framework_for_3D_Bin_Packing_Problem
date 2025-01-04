@@ -1,6 +1,8 @@
 # This file may be used to create an environment using:
 # $ conda create --name <env> --file <this file>
 # platform: win-64
+
+# this file is out of date and may not work with the latest version of conda
 _ipyw_jlab_nb_ext_conf=0.1.0=py38_0
 absl-py=1.1.0=pypi_0
 alabaster=0.7.12=py_0
