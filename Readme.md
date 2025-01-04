@@ -12,6 +12,7 @@ On the basis of previous work, we further add the following contents to the mode
 2. Supports multiple container packaging scenarios
 3. Introduce large model container selection
 
+This model is for task3. For task1 and task2, please refer to another folder.
 Please participate in the paper for details
 
 ## Usage
