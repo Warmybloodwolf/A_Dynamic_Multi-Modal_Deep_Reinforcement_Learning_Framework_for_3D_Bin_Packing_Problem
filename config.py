@@ -246,7 +246,7 @@ PARAMS_CONFIG = {
         },
         '--niter': {
             'type': int,
-            'default': 1000,
+            'default': 0,   # 0 for evaluation only
             'help': 'number of iterations to train',
             'dest': 'nb_iter'
         },
@@ -270,7 +270,7 @@ PARAMS_CONFIG = {
         },
         '--checkpoint': {
             'type': str,
-            'default': 'outputs/pack3d_gaijin2_20/run_20221229T060149/checkpoint.pt',
+            'default': 'pretrain/checkpoint_fp.pt',
             'help': 'path to save/load model',
             'dest': 'checkpoint_path'
         },

@@ -8,6 +8,31 @@ import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from utils.functions import move_to
+from openai import OpenAI
+import httpx
+import re
+import openai
+from problems.pack3d.prompt import *
+
+# 如果你需要复习我们的实验，你需要使用自己的API_KEY，请在下面替换为你的API_KEY。
+
+client = OpenAI(
+	base_url="TODO", 
+        api_key="TODO",
+        http_client=httpx.Client(
+            base_url="TODO", 
+            follow_redirects=True,
+    ),
+)
+
+def extract_part(response):
+    try:
+        # 匹配"Answer:"后面的方括号内容
+        prediction = re.search("Answer:\s*(\[.*?\])", response).group(1)
+        return prediction
+    except:
+        return None
+
 
 class PackAction():
     # (batch, 1)
@@ -120,11 +145,28 @@ class StatePack3D():
     
     def init_env(self, batch,batch_size,block_size,device):
         self.raw_data = batch
-        # TODO: 根据每个instance的box数据决定第一个container的尺寸，这里batch为(batch_size,block_size,3)的numpy数组，记录长宽高数据
-        # 假设决策得到选用的container尺寸为35，23，13和54, 45, 36
         container_size = np.zeros((batch_size, 3))
-        container_size[0] = [35,23,13]
-        container_size[1:] = [54,45,36]
+        for i,sub_batch in enumerate(batch):
+            # 将sub_batch转换为列表格式
+            box_list = []
+            for box in sub_batch:
+                box_list.append([float(box[0]), float(box[1]), float(box[2])])
+            print(box_list)            
+            full_prompt = First_container_size % str(box_list)
+            completion = client.chat.completions.create(
+                model="gpt-3.5-turbo", 
+                messages=[{"role": "system", "content": full_prompt}],
+                max_tokens=4096,
+                temperature=0.7,
+            )
+            response = completion.choices[0].message.content
+            answer = extract_part(response)
+            # Convert string representation of list to numpy array
+            answer = eval(answer) if isinstance(answer, str) else answer
+            container_size[i] = np.array(answer)
+            if answer is None:
+                container_size[i] = np.array([54,45,36])
+            print(container_size[i])
         embedding_size = np.array([10, 10, 10])
         
         embedding_expand = np.expand_dims(embedding_size, 0)
@@ -395,9 +437,29 @@ class StatePack3D():
                       / self.scale[batch_index, self.container_index[batch_index], 1] \
                       / self.scale[batch_index, self.container_index[batch_index], 2]
         self.container_index[batch_index] += 1
-        # TODO: 这里需要根据instance的box数据，创建新的container，并更新状态
-        # 假设创建的container尺寸为42，30，40
-        container_size = np.array([42, 30, 40])
+        container_size = np.zeros(3)
+        box_list = []
+        for i,box in enumerate(self.packed_state[batch_index]):
+            if box[0]==0:
+                unpack_box = self.raw_data[batch_index][i]
+                box_list.append([float(unpack_box[0]),float(unpack_box[1]),float(unpack_box[2])])
+        print("new container box_list:",box_list)
+           
+        full_prompt = First_container_size % str(box_list)
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo", 
+            messages=[{"role": "system", "content": full_prompt}],
+            max_tokens=4096,
+            temperature=0.7,
+        )
+        response = completion.choices[0].message.content
+        answer = extract_part(response)
+        # Convert string representation of list to numpy array
+        answer = eval(answer) if isinstance(answer, str) else answer
+        container_size = np.array(answer)
+        if answer is None:
+            container_size = np.array([54,45,36])
+        print(container_size)
         scale = embedding_size / container_size
         scale = move_to(torch.tensor(scale, dtype=torch.float32),self.device)
         self.scale[batch_index, self.container_index[batch_index], :] = scale
