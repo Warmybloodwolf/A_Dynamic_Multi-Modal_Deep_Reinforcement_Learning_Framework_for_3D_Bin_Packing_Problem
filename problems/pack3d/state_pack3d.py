@@ -9,6 +9,17 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from utils.functions import move_to
 
+container_sizes = np.array([
+    (35, 23, 13),
+    (37, 26, 13),
+    (38, 26, 13),
+    (40, 28, 16),
+    (42, 30, 18),
+    (42, 30, 40),
+    (52, 40, 17),
+    (54, 45, 36)
+])
+
 class PackAction():
     # (batch, 1)
 
@@ -120,11 +131,12 @@ class StatePack3D():
     
     def init_env(self, batch,batch_size,block_size,device):
         self.raw_data = batch
-        # TODO: 根据每个instance的box数据决定第一个container的尺寸，这里batch为(batch_size,block_size,3)的numpy数组，记录长宽高数据
-        # 假设决策得到选用的container尺寸为35，23，13和54, 45, 36
+        # ablation: use the max volume as the container size
         container_size = np.zeros((batch_size, 3))
-        container_size[0] = [35,23,13]
-        container_size[1:] = [54,45,36]
+        for i in range(batch_size):
+            container_size = container_sizes[np.random.choice(container_sizes.shape[0])]
+        # container_size[:] = [54,45,36]
+        
         embedding_size = np.array([10, 10, 10])
         
         embedding_expand = np.expand_dims(embedding_size, 0)
@@ -395,9 +407,10 @@ class StatePack3D():
                       / self.scale[batch_index, self.container_index[batch_index], 1] \
                       / self.scale[batch_index, self.container_index[batch_index], 2]
         self.container_index[batch_index] += 1
-        # TODO: 这里需要根据instance的box数据，创建新的container，并更新状态
-        # 假设创建的container尺寸为42，30，40
-        container_size = np.array([42, 30, 40])
+        # ablation: use the max volume as the container size / random choose a size
+        # container_size = np.array([54, 45, 36])
+        container_size = container_sizes[np.random.choice(container_sizes.shape[0])]
+
         scale = embedding_size / container_size
         scale = move_to(torch.tensor(scale, dtype=torch.float32),self.device)
         self.scale[batch_index, self.container_index[batch_index], :] = scale
